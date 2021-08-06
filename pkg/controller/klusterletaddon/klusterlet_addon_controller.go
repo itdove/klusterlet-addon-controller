@@ -211,6 +211,7 @@ func (r *ReconcileKlusterletAddon) Reconcile(request reconcile.Request) (reconci
 			return reconcile.Result{Requeue: true, RequeueAfter: 5 * time.Second}, err
 		}
 
+		//WORK-AROUND until issue #74 is implemented
 		//update managedcluster label for PolicyController
 		if err := setManagedClusterPolicyControllerLabel(managedCluster, klusterletAddonConfig, r.client); err != nil {
 			reqLogger.Error(err, "Fail to update label for PolicyController in managedcluster")
@@ -296,6 +297,7 @@ func (r *ReconcileKlusterletAddon) Reconcile(request reconcile.Request) (reconci
 		return reconcile.Result{}, err
 	}
 
+	//WORK-AROUND until issue #74 is implemented
 	//update managedcluster label for PolicyController
 	if err := setManagedClusterPolicyControllerLabel(managedCluster, klusterletAddonConfig, r.client); err != nil {
 		reqLogger.Error(err, "Fail to update label for PolicyController in managedcluster")
@@ -395,15 +397,60 @@ func IsCRDManfestWorkAvailable(manifestWork *manifestworkv1.ManifestWork) bool {
 	return false
 }
 
+//WORK-AROUND until issue #74 is implemented
+//Add/Remove a label depending on policy controller installation
+
 func setManagedClusterPolicyControllerLabel(managedCluster *managedclusterv1.ManagedCluster, klusterletAddonConfig *agentv1.KlusterletAddonConfig, client client.Client) error {
 	if klusterletAddonConfig.DeletionTimestamp != nil ||
 		!klusterletAddonConfig.Spec.PolicyController.Enabled {
-		delete(managedCluster.GetLabels(), PolicyControllerLabel)
+		if _, ok := managedCluster.GetLabels()[PolicyControllerLabel]; ok {
+			delete(managedCluster.GetLabels(), PolicyControllerLabel)
+			return client.Update(context.TODO(), managedCluster)
+		}
 	} else {
 		if managedCluster.GetLabels() == nil {
 			managedCluster.SetLabels(map[string]string{})
 		}
-		managedCluster.GetLabels()[PolicyControllerLabel] = "true"
+		if strings.ToLower(managedCluster.GetLabels()[PolicyControllerLabel]) != "true" {
+			managedCluster.GetLabels()[PolicyControllerLabel] = "true"
+			return client.Update(context.TODO(), managedCluster)
+		}
 	}
-	return client.Update(context.TODO(), managedCluster)
+	return nil
 }
+
+// func setManagedClusterPolicyControllerLabel(
+// 	managedCluster *managedclusterv1.ManagedCluster,
+// 	klusterletAddonConfig *agentv1.KlusterletAddonConfig,
+// 	client client.Client) error {
+// 	managedClusterAddon := &addonv1alpha1.ManagedClusterAddOn{}
+// 	// check if it exists
+// 	if err := client.Get(
+// 		context.TODO(),
+// 		types.NamespacedName{
+// 			Name:      addons.PolicyCtrl.GetManagedClusterAddOnName(),
+// 			Namespace: klusterletAddonConfig.Namespace,
+// 		},
+// 		managedClusterAddon,
+// 	); err != nil {
+// 		if errors.IsNotFound(err) {
+// 			//ManagedClusterAddOn doesn't exist, check if managedcluster needs to be updated
+// 			if _, ok := managedCluster.GetLabels()[PolicyControllerLabel]; ok {
+// 				delete(managedCluster.GetLabels(), PolicyControllerLabel)
+// 				return client.Update(context.TODO(), managedCluster)
+// 			}
+// 			return nil
+// 		}
+// 		return err
+// 	}
+// 	//ManagedClusterAddOn exists
+// 	if managedCluster.GetLabels() == nil {
+// 		managedCluster.SetLabels(map[string]string{})
+// 	}
+// 	//check if managedcluster needs to be updated
+// 	if strings.ToLower(managedCluster.GetLabels()[PolicyControllerLabel]) != "true" {
+// 		managedCluster.GetLabels()[PolicyControllerLabel] = "true"
+// 		return client.Update(context.TODO(), managedCluster)
+// 	}
+// 	return nil
+// }
